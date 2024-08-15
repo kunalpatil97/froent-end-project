@@ -1,0 +1,189 @@
+1.Project Setup:
+
+Use create-react-app to bootstrap the React project.
+Install necessary dependencies: redux, react-redux, redux-saga, axios, antd, and a charting library like recharts or chart.js.
+bash
+Copy code
+npx create-react-app dashboard-app
+cd dashboard-app
+npm install redux react-redux redux-saga axios antd recharts
+
+2.setting up redux
+// src/store.js
+import { createStore, applyMiddleware } from 'redux';
+import createSagaMiddleware from 'redux-saga';
+import rootReducer from './reducers';
+import rootSaga from './sagas';
+
+const sagaMiddleware = createSagaMiddleware();
+
+const store = createStore(rootReducer, applyMiddleware(sagaMiddleware));
+
+sagaMiddleware.run(rootSaga);
+
+export default store;
+
+3.creating actions and reducers
+// src/actions.js
+export const FETCH_DATA_REQUEST = 'FETCH_DATA_REQUEST';
+export const FETCH_DATA_SUCCESS = 'FETCH_DATA_SUCCESS';
+export const FETCH_DATA_FAILURE = 'FETCH_DATA_FAILURE';
+export const SET_FILTER = 'SET_FILTER';
+
+export const fetchDataRequest = () => ({ type: FETCH_DATA_REQUEST });
+export const fetchDataSuccess = (data) => ({ type: FETCH_DATA_SUCCESS, payload: data });
+export const fetchDataFailure = (error) => ({ type: FETCH_DATA_FAILURE, payload: error });
+export const setFilter = (filter) => ({ type: SET_FILTER, payload: filter });
+4.// src/reducers.js
+import { FETCH_DATA_SUCCESS, FETCH_DATA_FAILURE, SET_FILTER } from './actions';
+
+const initialState = {
+  data: [],
+  error: null,
+  filter: {
+    user: '',
+    category: '',
+  },
+};
+
+const rootReducer = (state = initialState, action) => {
+  switch (action.type) {
+    case FETCH_DATA_SUCCESS:
+      return { ...state, data: action.payload };
+    case FETCH_DATA_FAILURE:
+      return { ...state, error: action.payload };
+    case SET_FILTER:
+      return { ...state, filter: action.payload };
+    default:
+      return state;
+  }
+};
+
+export default rootReducer;
+5.implementing redux-saga
+// src/sagas.js
+import { call, put, takeEvery } from 'redux-saga/effects';
+import axios from 'axios';
+import { FETCH_DATA_REQUEST, fetchDataSuccess, fetchDataFailure } from './actions';
+
+function* fetchDataSaga() {
+  try {
+    const response = yield call(axios.get, 'http://52.168.1.54:8080/api/v1/userActivities');
+    yield put(fetchDataSuccess(response.data));
+  } catch (error) {
+    yield put(fetchDataFailure(error.message));
+  }
+}
+
+function* rootSaga() {
+  yield takeEvery(FETCH_DATA_REQUEST, fetchDataSaga);
+}
+
+export default rootSaga;
+
+6.creating the dashboard component
+// src/components/Dashboard.js
+import React, { useEffect, useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchDataRequest, setFilter } from '../actions';
+import { Table, Select, Button } from 'antd';
+import { PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+
+const { Option } = Select;
+
+const Dashboard = () => {
+  const dispatch = useDispatch();
+  const data = useSelector((state) => state.data);
+  const filter = useSelector((state) => state.filter);
+  const [view, setView] = useState('table');
+
+  useEffect(() => {
+    dispatch(fetchDataRequest());
+  }, [dispatch]);
+
+  const handleUserChange = (value) => {
+    dispatch(setFilter({ ...filter, user: value }));
+  };
+
+  const handleCategoryChange = (value) => {
+    dispatch(setFilter({ ...filter, category: value }));
+  };
+
+  const filteredData = data.filter(
+    (item) =>
+      (filter.user ? item.user === filter.user : true) &&
+      (filter.category ? item.category === filter.category : true)
+  );
+
+  const pieData = Object.entries(
+    filteredData.reduce((acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + 1;
+      return acc;
+    }, {})
+  ).map(([name, value]) => ({ name, value }));
+
+  return (
+    <div>
+      <div style={{ marginBottom: '16px' }}>
+        <Select placeholder="Select User" onChange={handleUserChange} style={{ width: 200, marginRight: '16px' }}>
+          {/* Options for users */}
+          {Array.from(new Set(data.map((item) => item.user))).map((user) => (
+            <Option key={user} value={user}>
+              {user}
+            </Option>
+          ))}
+        </Select>
+        <Select placeholder="Select Category" onChange={handleCategoryChange} style={{ width: 200, marginRight: '16px' }}>
+          {/* Options for categories */}
+          {Array.from(new Set(data.map((item) => item.category))).map((category) => (
+            <Option key={category} value={category}>
+              {category}
+            </Option>
+          ))}
+        </Select>
+        <Button onClick={() => setView('table')} style={{ marginRight: '16px' }}>
+          Table View
+        </Button>
+        <Button onClick={() => setView('pie')}>Pie Chart View</Button>
+      </div>
+      {view === 'table' ? (
+        <Table
+          dataSource={filteredData}
+          columns={[
+            { title: 'User', dataIndex: 'user', key: 'user' },
+            { title: 'Category', dataIndex: 'category', key: 'category' },
+            { title: 'Activity', dataIndex: 'activity', key: 'activity' },
+          ]}
+        />
+      ) : (
+        <PieChart width={400} height={400}>
+          <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} fill="#8884d8" label>
+            {pieData.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={['#0088FE', '#00C49F', '#FFBB28', '#FF8042'][index % 4]} />
+            ))}
+          </Pie>
+          <Tooltip />
+          <Legend />
+        </PieChart>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
+
+7.integrating everything
+// src/App.js
+import React from 'react';
+import { Provider } from 'react-redux';
+import store from './store';
+import Dashboard from './components/Dashboard';
+
+const App = () => (
+  <Provider store={store}>
+    <Dashboard />
+  </Provider>
+);
+
+export default App;
+8.
